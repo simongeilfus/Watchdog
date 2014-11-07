@@ -286,7 +286,7 @@ protected:
            if( filter.empty() && !ci::fs::exists( p ) ){
                throw WatchedFileSystemExc( path );
            }
-           else {
+           else if( !filter.empty() ){
                size_t wildcardPos   = filter.find( "*" );
                std::string before   = filter.substr( 0, wildcardPos );
                std::string after    = filter.substr( wildcardPos + 1 );
