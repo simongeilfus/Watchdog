@@ -27,8 +27,8 @@
  
  **Watchdog is currently a work-in-progress.**
  
- By default watchdog is disabled in release mode and will only execute the provided callback once when
- wd::watch is called and do nothing for the other methods. Undef WATCHDOG_ONLY_IN_DEBUG if you want
+ By default watchdog is disabled in release mode and will only execute the provided callback once when 
+ wd::watch is called and do nothing for the other methods. Undef WATCHDOG_ONLY_IN_DEBUG if you want 
  Watchdog to work in release mode.
  
  **For the moment non-Cinder application will have their callbacks called in a separated thread!**
@@ -49,7 +49,7 @@
  } );
  ```
  
- If Watchdog is used in a Cinder context, the two functions watchAsset/unwatchAsset are available as
+ If Watchdog is used in a Cinder context, the two functions watchAsset/unwatchAsset are available as 
  shortcuts, making the previous example shorter:
  
  ``` c++
@@ -57,7 +57,7 @@
 	// do something
  } );
  ```
- */
+*/
 
 #pragma once
 
@@ -69,17 +69,17 @@
 #include <atomic>
 
 #ifdef CINDER_CINDER
-#include "cinder/Filesystem.h"
+    #include "cinder/Filesystem.h"
 #else
-#if defined( CINDER_WINRT )
-#include <filesystem>
-namespace ci { namespace fs = std::tr2::sys; }
-#else
-#define BOOST_FILESYSTEM_VERSION 3
-#define BOOST_FILESYSTEM_NO_DEPRECATED
-#include <boost/filesystem.hpp>
-namespace ci { namespace fs = boost::filesystem; }
-#endif
+    #if defined( CINDER_WINRT )
+        #include <filesystem>
+        namespace ci { namespace fs = std::tr2::sys; }
+    #else
+        #define BOOST_FILESYSTEM_VERSION 3
+        #define BOOST_FILESYSTEM_NO_DEPRECATED
+        #include <boost/filesystem.hpp>
+        namespace ci { namespace fs = boost::filesystem; }
+    #endif
 #endif
 
 // By default watchdog is disabled in release mode and will only execute the
@@ -280,38 +280,38 @@ protected:
         }
         
         // add a new watcher
-        if( callback ){
-            
-            // the file doesn't exist
-            if( filter.empty() && !ci::fs::exists( p ) ){
-                throw WatchedFileSystemExc( path );
-            }
-            else {
-                size_t wildcardPos   = filter.find( "*" );
-                std::string before   = filter.substr( 0, wildcardPos );
-                std::string after    = filter.substr( wildcardPos + 1 );
-                bool found           = false;
-                ci::fs::directory_iterator end;
-                for( ci::fs::directory_iterator it( p ); it != end; ++it ){
-                    std::string current = it->path().string();
-                    size_t beforePos    = current.find( before );
-                    size_t afterPos     = current.find_last_of( after );
-                    if( ( beforePos != std::string::npos || before.empty() )
-                       && ( afterPos != std::string::npos || after.empty() ) ) {
-                        found = true;
-                        break;
-                    }
-                }
-                if( !found ){
-                    throw WatchedFileSystemExc( path );
-                }
-            }
-            
-            if( mFileWatchers.find( key ) == mFileWatchers.end() ){
-                auto newWatcher = mFileWatchers.emplace( key, std::unique_ptr<Watcher>( new Watcher( p, filter, callback ) ) );
-                if( newWatcher.second ){
-                    newWatcher.first->second->start();
-                }
+       if( callback ){
+           
+           // the file doesn't exist
+           if( filter.empty() && !ci::fs::exists( p ) ){
+               throw WatchedFileSystemExc( path );
+           }
+           else {
+               size_t wildcardPos   = filter.find( "*" );
+               std::string before   = filter.substr( 0, wildcardPos );
+               std::string after    = filter.substr( wildcardPos + 1 );
+               bool found           = false;
+               ci::fs::directory_iterator end;
+               for( ci::fs::directory_iterator it( p ); it != end; ++it ){
+                   std::string current = it->path().string();
+                   size_t beforePos    = current.find( before );
+                   size_t afterPos     = current.find_last_of( after );
+                   if( ( beforePos != std::string::npos || before.empty() )
+                      && ( afterPos != std::string::npos || after.empty() ) ) {
+                       found = true;
+                       break;
+                   }
+               }
+               if( !found ){
+                   throw WatchedFileSystemExc( path );
+               }
+           }
+           
+           if( mFileWatchers.find( key ) == mFileWatchers.end() ){
+               auto newWatcher = mFileWatchers.emplace( key, std::unique_ptr<Watcher>( new Watcher( p, filter, callback ) ) );
+               if( newWatcher.second ){
+                   newWatcher.first->second->start();
+               }
             }
         }
         // if there is no callback that means that we are unwatching
@@ -338,7 +338,7 @@ protected:
 class SleepyWatchdog {
 public:
     
-    //! executes the callback
+    //! executes the callback once
     static void watch( const ci::fs::path &path, const std::function<void(const ci::fs::path&)> &callback )
     {
         callback( path );
@@ -348,15 +348,26 @@ public:
     
     //! does nothing
     static void unwatchAll() {}
+    
+#ifdef CINDER_CINDER
+    //! executes the callback once
+    static void watchAsset( const ci::fs::path &assetPath, const std::function<void(const ci::fs::path&)> &callback )
+    {
+        callback( assetPath );
+    }
+    
+    //! does nothing
+    static void unwatchAsset( const ci::fs::path &assetPath ) {}
+#endif
 };
 
 // defines the macro that allow to change the RELEASE/DEBUG behavior
 #ifdef WATCHDOG_ONLY_IN_DEBUG
-#if defined(NDEBUG) || defined(_NDEBUG) || defined(RELEASE) || defined(MASTER) || defined(GOLD)
-#define wd SleepyWatchdog
+    #if defined(NDEBUG) || defined(_NDEBUG) || defined(RELEASE) || defined(MASTER) || defined(GOLD)
+        #define wd SleepyWatchdog
+    #else
+        #define wd Watchdog
+    #endif
 #else
-#define wd Watchdog
-#endif
-#else
-typedef Watchdog wd;
+    typedef Watchdog wfs;
 #endif
