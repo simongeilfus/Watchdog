@@ -88,7 +88,7 @@
 #define WATCHDOG_ONLY_IN_DEBUG
 
 //! Exception for when Watchdog can't locate a file or parse the wildcard
-class WatchedFileSystemExc : public ci::Exception {
+class WatchedFileSystemExc : public std::exception {
 public:
     WatchedFileSystemExc( const ci::fs::path &path )
     {
