@@ -385,5 +385,5 @@ public:
         #define wd Watchdog
     #endif
 #else
-    typedef Watchdog wfs;
+    typedef Watchdog wd;
 #endif
