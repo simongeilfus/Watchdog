@@ -32,6 +32,17 @@ wd::watchAsset( "shaders/lighting.*", []( const fs::path &path ){
 } );
 ```
 
+There's is also a method to update the last write time of a file or directory which is usefull if you want to force the update of some files:
+
+``` c++
+wd::watchAsset( "shaders/include/*", []( const fs::path &path ){
+	// this will trigger any watched asset callback in "shaders"
+	wd::touchAsset( "shaders" );
+} );
+wd::watchAsset( "shaders/lighting.*", []( const fs::path &path ){
+	// do something
+} );
+```
 
 ##### License
 
