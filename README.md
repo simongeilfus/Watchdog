@@ -11,10 +11,10 @@ By default watchdog is disabled in release mode and will only execute the provid
 The API is very small an only expose those 4 functions to watch, unwatch or touch files or directories:
 
 ``` c++
-wd::watch( const fs::path &path, const std::function<void(const fs::path&)> &callback )
-wd::unwatch( const fs::path &path )
-wd::unwatchAll()
-wd::touch()
+wd::watch( const fs::path &path, const std::function<void(const fs::path&)> &callback );
+wd::unwatch( const fs::path &path );
+wd::unwatchAll();
+wd::touch();
 ```
 
 You can use a wildcard character to only watch for the desired files in a directory :
