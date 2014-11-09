@@ -80,11 +80,15 @@ public:
     {
         watch( path, std::function<void(const ci::fs::path&)>() );
     }
-    
     //! unwatches all previously registrated file or directory
     static void unwatchAll()
     {
         watch( ci::fs::path(), std::function<void(const ci::fs::path&)>() );
+    }
+    //! sets the last modification time of a file or directory. by default sets the time to the current time
+    static void touch( const ci::fs::path &path, std::time_t time = std::time( nullptr ) )
+    {
+        ci::fs::last_write_time( path, time );
     }
     
 #ifdef CINDER_CINDER
@@ -97,6 +101,11 @@ public:
     static void unwatchAsset( const ci::fs::path &assetPath )
     {
         watch( ci::app::getAssetPath( "" ) / assetPath, std::function<void(const ci::fs::path&)>() );
+    }
+    //! sets the last modification time of an asset. by default sets the time to the current time
+    static void touchAsset( const ci::fs::path &assetPath, std::time_t time = std::time( nullptr ) )
+    {
+        ci::fs::last_write_time( ci::app::getAssetPath("") / assetPath, time );
     }
 #endif
     
