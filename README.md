@@ -40,7 +40,10 @@ wd::watchAsset( "shaders/include/*", []( const fs::path &path ){
 	wd::touchAsset( "shaders" );
 } );
 wd::watchAsset( "shaders/lighting.*", []( const fs::path &path ){
-	// do something
+	// triggered on changes any from "lighting.*" and "include/*"
+} );
+wd::watchAsset( "shaders/wireframe.*", []( const fs::path &path ){
+	// triggered on changes any from "wireframe.*" and "include/*"
 } );
 ```
 
