@@ -8,41 +8,46 @@ By default watchdog is disabled in release mode and will only execute the provid
  
 **For the moment non-Cinder application will have their callbacks called in a separated thread!**
 
-The API is very small an only expose those 3 functions to watch or unwatch files or directories:
+The API is very small an only expose those 4 functions to watch, unwatch or touch files or directories:
 
 ``` c++
 wd::watch( const fs::path &path, const std::function<void(const fs::path&)> &callback )
 wd::unwatch( const fs::path &path )
 wd::unwatchAll()
+wd::touch()
 ```
 
 You can use a wildcard character to only watch for the desired files in a directory :
- 
-``` c++
-wd::watch( getAssetPath( "" ) / "shaders/lighting.*", []( const fs::path &path ){
-	// do something
-} );
-```
- 
-If Watchdog is used in a Cinder context, the two functions watchAsset/unwatchAsset are available as shortcuts, making the previous example shorter:
 
 ``` c++
-wd::watchAsset( "shaders/lighting.*", []( const fs::path &path ){
+wd::watch( "shaders/lighting.*", []( const fs::path &path ){
 	// do something
 } );
 ```
+
+If you need to be able to iterate through a watched directory you can change the callback signature to this :
+
+``` c++
+wd::watch( "images/*.png", []( const vector<fs::path> &paths ){
+	for( auto p : paths ){
+		cout << p << " has changed" << endl;
+	}
+} );
+```
+
+In the context of cinder both absolute path and path relative to the asset folder are accepted.
 
 There's is also a method to update the last write time of a file or directory which is usefull if you want to force the update of some files:
 
 ``` c++
-wd::watchAsset( "shaders/include/*", []( const fs::path &path ){
+wd::watch( "shaders/include/*", []( const fs::path &path ){
 	// this will trigger any watched asset callback in "shaders"
-	wd::touchAsset( "shaders" );
+	wd::touch( "shaders" );
 } );
-wd::watchAsset( "shaders/lighting.*", []( const fs::path &path ){
+wd::watch( "shaders/lighting.*", []( const fs::path &path ){
 	// triggered on changes any from "lighting.*" and "include/*"
 } );
-wd::watchAsset( "shaders/wireframe.*", []( const fs::path &path ){
+wd::watch( "shaders/wireframe.*", []( const fs::path &path ){
 	// triggered on changes any from "wireframe.*" and "include/*"
 } );
 ```
