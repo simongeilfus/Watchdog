@@ -365,7 +365,14 @@ public:
     //! executes the callback once
     static void watch( const ci::fs::path &path, const std::function<void(const ci::fs::path&)> &callback )
     {
+        // TODO should probably check for wildcards here as well
         callback( path );
+    }
+    static void watch( const ci::fs::path &path, const std::function<void(const std::vector<ci::fs::path>&)> &callback )
+    {
+        // TODO should probably check for wildcards here as well
+        // TODO this is wrong
+        callback( std::vector<ci::fs::path>() );
     }
     //! does nothing
     static void unwatch( const ci::fs::path &path ) {}
