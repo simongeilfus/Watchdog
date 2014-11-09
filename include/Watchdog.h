@@ -61,53 +61,51 @@ public:
     char mMessage[4096];
 };
 
-//! The main class
+//! Watchdog class. To be able to benefit from the WATCHDOG_ONLY_IN_DEBUG mechanism you should use wd instead of Watchdog
 class Watchdog {
 public:
     
-    //! watches a file or directory for modification and call back the specified std::function
+    //! Watches a file or directory for modification and call back the specified std::function. The path specified is passed as argument of the callback even if there is multiple files. Use the second watch method if you want to receive a list of all the files that have been modified.
     static void watch( const ci::fs::path &path, const std::function<void(const ci::fs::path&)> &callback )
     {
-        // create the static instance Watchdog instance
-        static Watchdog wd;
-        // and start its thread
-        if( !wd.mWatching ) wd.start();
-        
-        wd.watchImpl( path, callback );
+        watchImpl( path, callback, std::function<void(const std::vector<ci::fs::path>&)>() );
     }
-    //! unwatches a previously registrated file or directory
+    //! Watches a file or directory for modification and call back the specified std::function. A list of modified files or directory is passed as argument of the callback. Use this version only if you are watching multiple files or a directory.
+    static void watch( const ci::fs::path &path, const std::function<void(const std::vector<ci::fs::path>&)> &callback )
+    {
+        watchImpl( path, std::function<void(const ci::fs::path&)>(), callback );
+    }
+    //! Unwatches a previously registrated file or directory
     static void unwatch( const ci::fs::path &path )
     {
-        watch( path, std::function<void(const ci::fs::path&)>() );
+        watchImpl( path );
     }
-    //! unwatches all previously registrated file or directory
+    //! Unwatches all previously registrated file or directory
     static void unwatchAll()
     {
-        watch( ci::fs::path(), std::function<void(const ci::fs::path&)>() );
+        watchImpl( ci::fs::path() );
     }
-    //! sets the last modification time of a file or directory. by default sets the time to the current time
+    //! Sets the last modification time of a file or directory. by default sets the time to the current time
     static void touch( const ci::fs::path &path, std::time_t time = std::time( nullptr ) )
     {
-        ci::fs::last_write_time( path, time );
+        
+        // if the file or directory exists change its last write time
+        if( ci::fs::exists( path ) ){
+            ci::fs::last_write_time( path, time );
+            return;
+        }
+        // if not, visit each path if there's a wildcard
+        if( path.string().find( "*" ) != std::string::npos ){
+            visitWildCardPath( path, [time]( const ci::fs::path &p ){
+                ci::fs::last_write_time( p, time );
+                return false;
+            } );
+        }
+        // otherwise throw an exception
+        else {
+            throw WatchedFileSystemExc( path );
+        }
     }
-    
-#ifdef CINDER_CINDER
-    //! watches an asset for modification and call back the specified std::function
-    static void watchAsset( const ci::fs::path &assetPath, const std::function<void(const ci::fs::path&)> &callback )
-    {
-        watch( ci::app::getAssetPath( "" ) / assetPath, callback );
-    }
-    //! unwatches a previously registrated asset
-    static void unwatchAsset( const ci::fs::path &assetPath )
-    {
-        watch( ci::app::getAssetPath( "" ) / assetPath, std::function<void(const ci::fs::path&)>() );
-    }
-    //! sets the last modification time of an asset. by default sets the time to the current time
-    static void touchAsset( const ci::fs::path &assetPath, std::time_t time = std::time( nullptr ) )
-    {
-        ci::fs::last_write_time( ci::app::getAssetPath("") / assetPath, time );
-    }
-#endif
     
 protected:
     
@@ -127,79 +125,204 @@ protected:
     }
     
     
+    void start()
+    {
+        mWatching   = true;
+        mThread     = std::unique_ptr<std::thread>( new std::thread( [this](){
+            // keep watching for modifications every ms milliseconds
+            auto ms = std::chrono::milliseconds( 500 );
+            while( mWatching ) {
+                // iterate through each watcher and check for modification
+                std::lock_guard<std::mutex> lock( mMutex );
+                auto end = mFileWatchers.end();
+                for( auto it = mFileWatchers.begin(); it != end; ++it ) {
+                    it->second.watch();
+                }
+                
+                // make this thread sleep for a while
+                std::this_thread::sleep_for( ms );
+            }
+        } ) );
+    }
+    static void watchImpl( const ci::fs::path &path, const std::function<void(const ci::fs::path&)> &callback = std::function<void(const ci::fs::path&)>(), const std::function<void(const std::vector<ci::fs::path>&)> &listCallback = std::function<void(const std::vector<ci::fs::path>&)>() )
+    {
+        // create the static Watchdog instance
+        static Watchdog wd;
+        // and start its thread
+        if( !wd.mWatching ) wd.start();
+        
+        const std::string key = path.string();
+        
+        // add a new watcher
+        if( callback || listCallback ){
+            
+            std::string filter;
+            ci::fs::path p = path;
+            
+            // try to see if there's a match for the wildcard
+            if( path.string().find( "*" ) != std::string::npos ){
+                bool found = false;
+                std::pair<ci::fs::path,std::string> pathFilter = visitWildCardPath( path, [&found]( const ci::fs::path &p ){
+                    found = true;
+                    return true;
+                } );
+                if( !found ){
+                    throw WatchedFileSystemExc( path );
+                }
+                else {
+                    p       = pathFilter.first;
+                    filter  = pathFilter.second;
+                }
+            }
+            
+            std::lock_guard<std::mutex> lock( wd.mMutex );
+            if( wd.mFileWatchers.find( key ) == wd.mFileWatchers.end() ){
+                wd.mFileWatchers.emplace( make_pair( key, Watcher( p, filter, callback, listCallback ) ) );
+            }
+        }
+        // if there is no callback that means that we are unwatching
+        else {
+            // if the path is empty we unwatch all files
+            if( path.empty() ){
+                std::lock_guard<std::mutex> lock( wd.mMutex );
+                for( auto it = wd.mFileWatchers.begin(); it != wd.mFileWatchers.end(); ) {
+                    it = wd.mFileWatchers.erase( it );
+                }
+            }
+            // or the specified file or directory
+            else {
+                std::lock_guard<std::mutex> lock( wd.mMutex );
+                auto watcher = wd.mFileWatchers.find( key );
+                if( watcher != wd.mFileWatchers.end() ){
+                    wd.mFileWatchers.erase( watcher );
+                }
+            }
+        }
+    }
+    
+    static std::pair<ci::fs::path,std::string> getPathFilterPair( const ci::fs::path &path )
+    {
+        // extract wildcard and parent path
+        std::string key     = path.string();
+        ci::fs::path p      = path;
+        size_t wildCardPos  = key.find( "*" );
+        std::string filter;
+        if( wildCardPos != std::string::npos ){
+            filter  = path.filename().string();
+            p       = path.parent_path();
+        }
+        
+#ifdef CINDER_CINDER
+        // try to see if the path is an asset
+        if( !ci::fs::exists( p ) ){
+            ci::fs::path asset = ci::app::getAssetPath( p );
+            if( !asset.empty() ){
+                p = asset;
+            }
+        }
+#endif
+        // throw an exception if the file doesn't exist
+        if( filter.empty() && !ci::fs::exists( p ) ){
+            throw WatchedFileSystemExc( path );
+        }
+#ifdef CINDER_CINDER
+        else if( !filter.empty() && p.empty() ) {
+            // at this stage if the parent directory doesn't exist the only option left is to try with the asset folder
+            p = ci::app::getAssetPath( "" );
+        }
+#endif
+        
+        return std::make_pair( p, filter );
+            
+    }
+    
+    static std::pair<ci::fs::path,std::string> visitWildCardPath( const ci::fs::path &path, const std::function<bool(const ci::fs::path&)> &visitor ){
+        std::pair<ci::fs::path, std::string> pathFilter = getPathFilterPair( path );
+        if( !pathFilter.second.empty() ){
+            std::string full    = ( pathFilter.first / pathFilter.second ).string();
+            size_t wildcardPos  = full.find( "*" );
+            std::string before  = full.substr( 0, wildcardPos );
+            std::string after   = full.substr( wildcardPos + 1 );
+            ci::fs::directory_iterator end;
+            for( ci::fs::directory_iterator it( pathFilter.first ); it != end; ++it ){
+                std::string current = it->path().string();
+                size_t beforePos    = current.find( before );
+                size_t afterPos     = current.find( after );
+                if( ( beforePos != std::string::npos || before.empty() )
+                   && ( afterPos != std::string::npos || after.empty() ) ) {
+                    if( visitor( it->path() ) ){
+                        break;
+                    }
+                }
+            }
+        }
+        return pathFilter;
+    }
+    
     class Watcher {
     public:
-        Watcher( const ci::fs::path &path, const std::string &filter, const std::function<void(const ci::fs::path&)> &callback )
-        : mPath(path), mFilter(filter), mCallback(callback)
+        Watcher( const ci::fs::path &path, const std::string &filter, const std::function<void(const ci::fs::path&)> &callback, const std::function<void(const std::vector<ci::fs::path>&)> &listCallback )
+        : mPath(path), mFilter(filter), mCallback(callback), mListCallback(listCallback)
         {
             // make sure we store all initial write time
             if( !mFilter.empty() ) {
-                size_t wildcardPos  = mFilter.find( "*" );
-                if( wildcardPos != std::string::npos ) {
-                    std::string before  = mFilter.substr( 0, wildcardPos );
-                    std::string after   = mFilter.substr( wildcardPos + 1 );
-                    ci::fs::directory_iterator end;
-                    for( ci::fs::directory_iterator it( mPath ); it != end; ++it ){
-                        std::string p       = it->path().string();
-                        size_t beforePos    = p.find( before );
-                        size_t afterPos     = p.find( after );
-                        if( ( beforePos != std::string::npos || before.empty() )
-                           && ( afterPos != std::string::npos || after.empty() ) ) {
-                            hasChanged( it->path() );
-                        }
-                    }
-                }
+                std::vector<ci::fs::path> paths;
+                visitWildCardPath( path / filter, [this,&paths]( const ci::fs::path &p ){
+                    hasChanged( p );
+                    paths.push_back( p );
+                    return false;
+                } );
                 // this means that the first watch won't call the callback function
                 // so we have to manually call it here
-                mCallback( mPath / mFilter );
+                if( mCallback ){
+                    mCallback( mPath / mFilter );
+                }
+                else {
+                    mListCallback( paths );
+                }
             }
         }
         
         void watch()
         {
-            // check if the file or parent directory has changed
-            if( hasChanged( mPath ) ){
+            // if there's no filter we just check for one item
+            if( mFilter.empty() && hasChanged( mPath ) && mCallback ){
+#ifdef CINDER_CINDER
+                ci::app::App::get()->dispatchAsync( [this](){
+                    mCallback( mPath );
+                } );
+#else
+                mCallback( mPath );
+                //#error TODO: still have to figure out an elegant way to do this without cinder
+#endif
+            }
+            // otherwise we check the whole parent directory
+            else if( !mFilter.empty() ){
                 
-                // if there's no filter we just check one item
-                if( mFilter.empty() && mCallback ){
-                    #ifdef CINDER_CINDER
+                std::vector<ci::fs::path> paths;
+                visitWildCardPath( mPath / mFilter, [this,&paths]( const ci::fs::path &p ){
+                    bool pathHasChanged = hasChanged( p );
+                    if( pathHasChanged && mCallback ){
+#ifdef CINDER_CINDER
                         ci::app::App::get()->dispatchAsync( [this](){
-                            mCallback( mPath );
+                            mCallback( mPath / mFilter );
                         } );
-                    #else
-                        mCallback( mPath );
+#else
+                        mCallback( mPath / mFilter );
                         //#error TODO: still have to figure out an elegant way to do this without cinder
-                    #endif
-                }
-                // otherwise we check the whole parent directory
-                else {
-                    size_t wildcardPos  = mFilter.find( "*" );
-                    if( wildcardPos != std::string::npos ) {
-                        std::string before  = mFilter.substr( 0, wildcardPos );
-                        std::string after   = mFilter.substr( wildcardPos + 1 );
-                        ci::fs::directory_iterator end;
-                        for( ci::fs::directory_iterator it( mPath ); it != end; ++it ){
-                            std::string p       = it->path().string();
-                            size_t beforePos    = p.find( before );
-                            size_t afterPos     = p.find( after );
-                            if( ( beforePos != std::string::npos || before.empty() )
-                               && ( afterPos != std::string::npos || after.empty() ) ) {
-                                if( hasChanged( it->path() ) && mCallback ){
-                                    #ifdef CINDER_CINDER
-                                        ci::app::App::get()->dispatchAsync( [it,this](){
-                                            mCallback( mPath / mFilter );
-                                        } );
-                                    #else
-                                        mCallback( mPath / mFilter );
-                                        //#error TODO: still have to figure out an elegant way to do this without cinder
-                                    #endif
-                                    break;
-                                }
-                            }
-                        }
+#endif
+                        return true;
                     }
+                    else if( pathHasChanged && mListCallback ){
+                        paths.push_back( p );
+                    }
+                    return false;
+                } );
+                if( paths.size() && mListCallback ){
+                    mListCallback( paths );
                 }
             }
+            
         }
         
         bool hasChanged( const ci::fs::path &path )
@@ -222,97 +345,12 @@ protected:
         };
         
     protected:
-        ci::fs::path                                mPath;
-        std::string                                 mFilter;
-        std::function<void(const ci::fs::path&)>    mCallback;
-        std::map< std::string, time_t >             mModificationTimes;
+        ci::fs::path                                            mPath;
+        std::string                                             mFilter;
+        std::function<void(const ci::fs::path&)>                mCallback;
+        std::function<void(const std::vector<ci::fs::path>&)>   mListCallback;
+        std::map< std::string, time_t >                         mModificationTimes;
     };
-    
-    
-    void start()
-    {
-        mWatching   = true;
-        mThread     = std::unique_ptr<std::thread>( new std::thread( [this](){
-            // keep watching for modifications every ms milliseconds
-            auto ms = std::chrono::milliseconds( 500 );
-            while( mWatching ) {
-                // iterate through each watcher and check for modification
-                std::lock_guard<std::mutex> lock( mMutex );
-                auto end = mFileWatchers.end();
-                for( auto it = mFileWatchers.begin(); it != end; ++it ) {
-                    it->second.watch();
-                }
-                
-                // make this thread sleep for a while
-                std::this_thread::sleep_for( ms );
-            }
-        } ) );
-    }
-    
-    void watchImpl( const ci::fs::path &path, const std::function<void(const ci::fs::path&)> &callback )
-    {
-        // check if there's a wildcard in the path
-        std::string key     = path.string();
-        ci::fs::path p      = path;
-        size_t wildCardPos  = key.find( "*" );
-        std::string filter;
-        if( wildCardPos != std::string::npos ){
-            filter  = path.filename().string();
-            p       = path.parent_path();
-        }
-        
-        // add a new watcher
-       if( callback ){
-           
-           // throw an exception if the file doesn't exist
-           if( filter.empty() && !ci::fs::exists( p ) ){
-               throw WatchedFileSystemExc( path );
-           }
-           else if( !filter.empty() ) {
-               size_t wildcardPos   = filter.find( "*" );
-               std::string before   = filter.substr( 0, wildcardPos );
-               std::string after    = filter.substr( wildcardPos + 1 );
-               bool found           = false;
-               ci::fs::directory_iterator end;
-               for( ci::fs::directory_iterator it( p ); it != end; ++it ){
-                   std::string current = it->path().string();
-                   size_t beforePos    = current.find( before );
-                   size_t afterPos     = current.find_last_of( after );
-                   if( ( beforePos != std::string::npos || before.empty() )
-                      && ( afterPos != std::string::npos || after.empty() ) ) {
-                       found = true;
-                       break;
-                   }
-               }
-               if( !found ){
-                   throw WatchedFileSystemExc( path );
-               }
-           }
-           
-           std::lock_guard<std::mutex> lock( mMutex );
-           if( mFileWatchers.find( key ) == mFileWatchers.end() ){
-               mFileWatchers.emplace( make_pair( key, Watcher( p, filter, callback ) ) );
-           }
-        }
-        // if there is no callback that means that we are unwatching
-        else {
-            // if the path is empty we unwatch all files
-            if( path.empty() ){
-                std::lock_guard<std::mutex> lock( mMutex );
-                for( auto it = mFileWatchers.begin(); it != mFileWatchers.end(); ) {
-                    it = mFileWatchers.erase( it );
-                }
-            }
-            // or the specified file
-            else {
-                std::lock_guard<std::mutex> lock( mMutex );
-                auto watcher = mFileWatchers.find( key );
-                if( watcher != mFileWatchers.end() ){
-                    mFileWatchers.erase( watcher );
-                }
-            }
-        }
-    }
     
     std::mutex                      mMutex;
     std::atomic<bool>               mWatching;
@@ -335,16 +373,8 @@ public:
     //! does nothing
     static void unwatchAll() {}
     
-#ifdef CINDER_CINDER
-    //! executes the callback once
-    static void watchAsset( const ci::fs::path &assetPath, const std::function<void(const ci::fs::path&)> &callback )
-    {
-        callback( assetPath );
-    }
-    
     //! does nothing
-    static void unwatchAsset( const ci::fs::path &assetPath ) {}
-#endif
+    static void touch( const ci::fs::path &path, std::time_t time = std::time( nullptr ) ) {}
 };
 
 // defines the macro that allow to change the RELEASE/DEBUG behavior
