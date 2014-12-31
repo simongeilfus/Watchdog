@@ -31,6 +31,7 @@
 
 #ifdef CINDER_CINDER
     #include "cinder/Filesystem.h"
+    #include "cinder/app/AppNative.h"
 #else
     #if defined( CINDER_WINRT )
         #include <filesystem>
@@ -158,7 +159,6 @@ protected:
             
             std::string filter;
             ci::fs::path p = path;
-            
             // try to see if there's a match for the wildcard
             if( path.string().find( "*" ) != std::string::npos ){
                 bool found = false;
@@ -174,6 +174,20 @@ protected:
                     filter  = pathFilter.second;
                 }
             }
+            
+#ifdef CINDER_CINDER
+            // try to see if the path is an asset
+            if( !ci::fs::exists( p ) ){
+                ci::fs::path asset = ci::app::getAssetPath( p );
+                if( !asset.empty() ){
+                    p = asset;
+                }
+            }
+            // throw an exception if the file doesn't exist
+            if( !ci::fs::exists( p ) ){
+                throw WatchedFileSystemExc( path );
+            }
+#endif
             
             std::lock_guard<std::mutex> lock( wd.mMutex );
             if( wd.mFileWatchers.find( key ) == wd.mFileWatchers.end() ){
@@ -365,13 +379,13 @@ public:
     //! executes the callback once
     static void watch( const ci::fs::path &path, const std::function<void(const ci::fs::path&)> &callback )
     {
-        // TODO should probably check for wildcards here as well
+        // TODO: should probably check for wildcards here as well
         callback( path );
     }
     static void watch( const ci::fs::path &path, const std::function<void(const std::vector<ci::fs::path>&)> &callback )
     {
-        // TODO should probably check for wildcards here as well
-        // TODO this is wrong
+        // TODO: should probably check for wildcards here as well
+        // TODO: this is wrong
         callback( std::vector<ci::fs::path>() );
     }
     //! does nothing
