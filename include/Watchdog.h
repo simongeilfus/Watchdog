@@ -44,6 +44,19 @@
     #endif
 #endif
 
+// Windows Issue :
+// For the moment the overloaded version of wd::watch has a different name on windows
+// platforms because of some issues with visual studio lambda support (see above)
+// see https://forum.libcinder.org/topic/watchdog#23286000002228083
+// and https://github.com/simongeilfus/Watchdog/issues/2
+// It seems that visual studio is not able to resolve the ambiguity between the two
+// wd::watch methods when trying to cast a lambda to a std::function. A quick
+// temporary way to fix the issue is to rename the method on windows until microsoft
+// decide to update visual studio compiler.
+#if defined(_WIN32) || defined(__WIN32__) || defined(WIN32)
+    #define WIN_AMBIGUITY_FIX
+#endif
+
 // By default watchdog is disabled in release mode and will only execute the
 // provided callback once when wd::watch is called and do nothing for the
 // other methods. Undef this if you want Watchdog to work in release mode.
@@ -71,8 +84,13 @@ public:
     {
         watchImpl( path, callback, std::function<void(const std::vector<ci::fs::path>&)>() );
     }
+    
     //! Watches a file or directory for modification and call back the specified std::function. A list of modified files or directory is passed as argument of the callback. Use this version only if you are watching multiple files or a directory.
+#ifdef WIN_AMBIGUITY_FIX
+    static void watchMany( const ci::fs::path &path, const std::function<void(const std::vector<ci::fs::path>&)> &callback )
+#else
     static void watch( const ci::fs::path &path, const std::function<void(const std::vector<ci::fs::path>&)> &callback )
+#endif
     {
         watchImpl( path, std::function<void(const ci::fs::path&)>(), callback );
     }
