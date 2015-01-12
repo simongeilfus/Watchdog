@@ -133,7 +133,7 @@ protected:
     {
     }
     
-    ~Watchdog()
+    void close()
     {
         // remove all watchers
         unwatchAll();
@@ -168,7 +168,12 @@ protected:
         // create the static Watchdog instance
         static Watchdog wd;
         // and start its thread
-        if( !wd.mWatching ) wd.start();
+        if( !wd.mWatching ) {
+            wd.start();
+            ci::app::App::get()->getSignalShutdown().connect( [&]() {
+                wd.close();
+            } );
+        }
         
         const std::string key = path.string();
         
