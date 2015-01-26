@@ -412,7 +412,11 @@ public:
             callback( pathFilter.first );
         }
     }
+#ifdef WIN_AMBIGUITY_FIX
+    static void watchMany( const ci::fs::path &path, const std::function<void(const std::vector<ci::fs::path>&)> &callback )
+#else
     static void watch( const ci::fs::path &path, const std::function<void(const std::vector<ci::fs::path>&)> &callback )
+#endif
     {
         auto pathFilter = Watchdog::visitWildCardPath( path, []( const ci::fs::path &p ){ return false; } );
         if( pathFilter.first.empty() ){
