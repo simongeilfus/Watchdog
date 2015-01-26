@@ -389,6 +389,8 @@ protected:
         std::map< std::string, time_t >                         mModificationTimes;
     };
     
+    friend class SleepyWatchdog;
+    
     std::mutex                      mMutex;
     std::atomic<bool>               mWatching;
     std::unique_ptr<std::thread>    mThread;
@@ -402,14 +404,24 @@ public:
     //! executes the callback once
     static void watch( const ci::fs::path &path, const std::function<void(const ci::fs::path&)> &callback )
     {
-        // TODO: should probably check for wildcards here as well
-        callback( path );
+        auto pathFilter = Watchdog::visitWildCardPath( path, []( const ci::fs::path &p ){ return false; } );
+        if( pathFilter.first.empty() ){
+            throw WatchedFileSystemExc( path );
+        }
+        else {
+            callback( pathFilter.first );
+        }
     }
     static void watch( const ci::fs::path &path, const std::function<void(const std::vector<ci::fs::path>&)> &callback )
     {
-        // TODO: should probably check for wildcards here as well
-        // TODO: this is wrong
-        callback( std::vector<ci::fs::path>() );
+        auto pathFilter = Watchdog::visitWildCardPath( path, []( const ci::fs::path &p ){ return false; } );
+        if( pathFilter.first.empty() ){
+            throw WatchedFileSystemExc( path );
+        }
+        else {
+            // TODO: this is wrong
+            callback( std::vector<ci::fs::path>() );
+        }
     }
     //! does nothing
     static void unwatch( const ci::fs::path &path ) {}
