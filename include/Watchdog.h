@@ -31,7 +31,11 @@
 
 #ifdef CINDER_CINDER
     #include "cinder/Filesystem.h"
-    #include "cinder/app/AppNative.h"
+    #if CINDER_VERSION < 900
+        #include "cinder/app/AppNative.h"
+    #else
+        #include "cinder/app/App.h"
+    #endif
 #else
     #if defined( CINDER_WINRT )
         #include <filesystem>
@@ -170,9 +174,15 @@ protected:
         // and start its thread
         if( !wd.mWatching ) {
             wd.start();
-            ci::app::App::get()->getSignalShutdown().connect( [&]() {
-                wd.close();
-            } );
+            #ifdef CINDER_CINDER
+                #if CINDER_VERSION < 900
+                    ci::app::App::get()->getSignalShutdown().connect( [&]() {
+                #else
+                    ci::app::App::get()->getSignalCleanup().connect( [&]() {
+                #endif
+                        wd.close();
+                    } );
+            #endif
         }
         
         const std::string key = path.string();
