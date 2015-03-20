@@ -61,10 +61,11 @@
     #define WIN_AMBIGUITY_FIX
 #endif
 
+// There's currently some issues with this so it's disabled for now :
 // By default watchdog is disabled in release mode and will only execute the
 // provided callback once when wd::watch is called and do nothing for the
 // other methods. Undef this if you want Watchdog to work in release mode.
-#define WATCHDOG_ONLY_IN_DEBUG
+// #define WATCHDOG_ONLY_IN_DEBUG
 
 //! Exception for when Watchdog can't locate a file or parse the wildcard
 class WatchedFileSystemExc : public std::exception {
@@ -222,7 +223,7 @@ protected:
             }
 #endif
             
-            std::lock_guard<std::mutex> lock( wd.mMutex );
+            std::lock_guard<std::mutex> lock( wd.mMutex, std::adopt_lock );
             if( wd.mFileWatchers.find( key ) == wd.mFileWatchers.end() ){
                 wd.mFileWatchers.emplace( make_pair( key, Watcher( p, filter, callback, listCallback ) ) );
             }
@@ -231,14 +232,14 @@ protected:
         else {
             // if the path is empty we unwatch all files
             if( path.empty() ){
-                std::lock_guard<std::mutex> lock( wd.mMutex );
+                std::lock_guard<std::mutex> lock( wd.mMutex, std::adopt_lock );
                 for( auto it = wd.mFileWatchers.begin(); it != wd.mFileWatchers.end(); ) {
                     it = wd.mFileWatchers.erase( it );
                 }
             }
             // or the specified file or directory
             else {
-                std::lock_guard<std::mutex> lock( wd.mMutex );
+                std::lock_guard<std::mutex> lock( wd.mMutex, std::adopt_lock );
                 auto watcher = wd.mFileWatchers.find( key );
                 if( watcher != wd.mFileWatchers.end() ){
                     wd.mFileWatchers.erase( watcher );
