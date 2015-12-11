@@ -28,6 +28,7 @@
 #include <thread>
 #include <memory>
 #include <atomic>
+#include <mutex>
 
 #ifdef CINDER_CINDER
     #include "cinder/Filesystem.h"
@@ -59,6 +60,10 @@
 // decide to update visual studio compiler.
 #if defined(_WIN32) || defined(__WIN32__) || defined(WIN32)
     #define WIN_AMBIGUITY_FIX
+
+    // Also disable an annoying warning:
+    #pragma warning( push )
+    #pragma warning( disable:4996 ) // warning C4996: 'sprintf': This function or variable may be unsafe.
 #endif
 
 // There's currently some issues with this so it's disabled for now :
@@ -156,12 +161,15 @@ protected:
             // keep watching for modifications every ms milliseconds
             auto ms = std::chrono::milliseconds( 500 );
             while( mWatching ) {
-                // iterate through each watcher and check for modification
-                std::lock_guard<std::mutex> lock( mMutex );
-                auto end = mFileWatchers.end();
-                for( auto it = mFileWatchers.begin(); it != end; ++it ) {
-                    it->second.watch();
-                }
+                do {
+                    // iterate through each watcher and check for modification
+                    std::lock_guard<std::mutex> lock( mMutex );
+                    auto end = mFileWatchers.end();
+                    for( auto it = mFileWatchers.begin(); it != end; ++it ) {
+                        it->second.watch();
+                    }
+                    // lock will be released before this thread goes to sleep
+                } while( false );
                 
                 // make this thread sleep for a while
                 std::this_thread::sleep_for( ms );
@@ -223,7 +231,7 @@ protected:
             }
 #endif
             
-            std::lock_guard<std::mutex> lock( wd.mMutex, std::adopt_lock );
+            std::lock_guard<std::mutex> lock( wd.mMutex );
             if( wd.mFileWatchers.find( key ) == wd.mFileWatchers.end() ){
                 wd.mFileWatchers.emplace( make_pair( key, Watcher( p, filter, callback, listCallback ) ) );
             }
@@ -232,14 +240,14 @@ protected:
         else {
             // if the path is empty we unwatch all files
             if( path.empty() ){
-                std::lock_guard<std::mutex> lock( wd.mMutex, std::adopt_lock );
+                std::lock_guard<std::mutex> lock( wd.mMutex );
                 for( auto it = wd.mFileWatchers.begin(); it != wd.mFileWatchers.end(); ) {
                     it = wd.mFileWatchers.erase( it );
                 }
             }
             // or the specified file or directory
             else {
-                std::lock_guard<std::mutex> lock( wd.mMutex, std::adopt_lock );
+                std::lock_guard<std::mutex> lock( wd.mMutex );
                 auto watcher = wd.mFileWatchers.find( key );
                 if( watcher != wd.mFileWatchers.end() ){
                     wd.mFileWatchers.erase( watcher );
@@ -457,4 +465,8 @@ public:
     #endif
 #else
     typedef Watchdog wd;
+#endif
+	
+#if defined(_WIN32) || defined(__WIN32__) || defined(WIN32)
+    #pragma warning( pop )
 #endif
