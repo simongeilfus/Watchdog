@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<cinder>
+<block
+	name="Watchdog"
+	id="sg.watchdog"
+	author="Simon Geilfus"
+	summary="File Watcher"
+	>
+	<includePath>include</includePath>
+	<header>include/Watchdog.h</header>
+</block>
+</cinder>
