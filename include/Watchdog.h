@@ -115,7 +115,11 @@ public:
         watchImpl( ci::fs::path() );
     }
     //! Sets the last modification time of a file or directory. by default sets the time to the current time
+#if defined(_WIN32) || defined(__WIN32__) || defined(WIN32)	
+    static void touch( const ci::fs::path &path, ci::fs::file_time_type time = ci::fs::file_time_type::clock::now() )
+#else
     static void touch( const ci::fs::path &path, std::time_t time = std::time( nullptr ) )
+#endif
     {
         
         // if the file or directory exists change its last write time
@@ -380,11 +384,11 @@ protected:
             }
             
         }
-        
-        bool hasChanged( const ci::fs::path &path )
+
+		bool hasChanged( const ci::fs::path &path )
         {
             // get the last modification time
-            std::time_t time = ci::fs::last_write_time( path );
+            auto time = ci::fs::last_write_time( path );
             // add a new modification time to the map
             std::string key = path.string();
             if( mModificationTimes.find( key ) == mModificationTimes.end() ) {
@@ -405,7 +409,11 @@ protected:
         std::string                                             mFilter;
         std::function<void(const ci::fs::path&)>                mCallback;
         std::function<void(const std::vector<ci::fs::path>&)>   mListCallback;
+#if defined(_WIN32) || defined(__WIN32__) || defined(WIN32)	
+		std::map< std::string, ci::fs::file_time_type >         mModificationTimes;
+#else
         std::map< std::string, time_t >                         mModificationTimes;
+#endif
     };
     
     friend class SleepyWatchdog;
