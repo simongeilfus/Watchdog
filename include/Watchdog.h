@@ -29,6 +29,7 @@
 #include <memory>
 #include <atomic>
 #include <mutex>
+#include <functional>
 
 #ifdef CINDER_CINDER
     #include "cinder/Filesystem.h"
@@ -40,7 +41,7 @@
 #else
 	#if defined( CINDER_WINRT ) || ( defined( _MSC_VER ) && ( _MSC_VER >= 1900 ) )
         #include <filesystem>
-        namespace ci { namespace fs = std::tr2::sys; }
+        namespace ci { namespace fs = std::filesystem; }
     #else
         #define BOOST_FILESYSTEM_VERSION 3
         #define BOOST_FILESYSTEM_NO_DEPRECATED
@@ -74,10 +75,21 @@
 
 //! Exception for when Watchdog can't locate a file or parse the wildcard
 class WatchedFileSystemExc : public std::exception {
+    //Overload for print because ci::fs::path::c_str can be char* or wchar_tr*
+    void printWarning(const char * pathstr)
+    {
+        sprintf( mMessage, "Failed to find file or directory at: %s", pathstr );
+    }
+
+    void printWarning(const wchar_t * pathstr)
+    {
+        sprintf( mMessage, "Failed to find file or directory at: %ls", pathstr );
+    }
+
 public:
     WatchedFileSystemExc( const ci::fs::path &path )
     {
-        sprintf( mMessage, "Failed to find file or directory at: %s", path.c_str() );
+        printWarning(path.c_str());
     }
     
     virtual const char * what() const throw() { return mMessage; }
